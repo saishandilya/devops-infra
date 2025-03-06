@@ -95,7 +95,7 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
 ### **4. Jenkins Portal Setup**  
 
 1. Open Jenkins in your browser: `http://<jenkins-master-public-ip>:8080` and Enter the **Administrator password** when prompted.
-2. Log in to the Jenkins master server and retrieve the `initialAdminPassword` using the below command:
+2. Log in to the Jenkins master node and retrieve the `initialAdminPassword` using the below command:
     ```sh
     sudo cat /var/lib/jenkins/secrets/initialAdminPassword
     ```
@@ -502,7 +502,7 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
     - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Docker Creds Injection** updates **secret.yaml** in `helm-chart/templates/secret.yaml` folder, replacing .dockerconfigjson value with the generated Docker credentials.
 
         *Note: For security reasons, credentials are not stored in GitHub; instead, they are injected dynamically during runtime.*
-    - Refer to the [**Helm Charts Guide**](readmes/helm-chart.md) for details on using Helm charts to deploy the application on EKS.
+    - Refer to the [**Helm Charts Guide**](readmes/helm-charts.md) for details on using Helm charts to deploy the application on EKS.
         #### `Docker Creds Injection Stage`
         ```groovy
         stage('Docker Creds Injection') {
