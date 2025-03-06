@@ -153,15 +153,17 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
    - **Terraform Plugin**  
 - Click **Install** to begin the installation.
 
-### **7. Deploy EKS** (under process...)
-- Add the EKS deployment stage details here and tell that they can create the EKS Cluster here and use it in the Project or delete the EKS if they are working on the project for more than a day. 
+### **7. Deploy EKS** (Optional)
+- This is an optional setup. You can perform it either as part of the infrastructure setup or during the application deployment stages, before the **`Cluster Validation`** stage.
+- If you are setting up an EKS cluster for the first time, refer to the [**EKS Cluster Setup Guide**](readmes/eks-cluster-setup.md) for detailed instructions.
 
+*Note: If you have been working on the project for more than a day, clean up the resources to avoid billing. You can recreate the cluster as part of the **application deployment** stages, before the `Cluster Validation` stage.*
 ## Application Setup  (Under Process can still be optimised...)
 
 ### **1. Clone the Application Repository**
 - **Clone & push or Fork** the Application repository to your GitHub account to set up your local development environment.
     ```sh
-    git clone https://github.com/saishandilya/taxi-booking.git
+    git clone https://github.com/saishandilya/devops-app.git
     ```
 
 ### **2. Jenkins Pipeline Configuration**
@@ -499,7 +501,7 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
         - **ID**: `docker-config-creds`  
         - **Description**: Docker config base 64 encoded credentials.
     - Click **Create**.
-    - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Docker Creds Injection** updates **secret.yaml** in `helm-chart/templates/secret.yaml` folder, replacing .dockerconfigjson value with the generated Docker credentials.
+    - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Docker Creds Injection** updates **secret.yaml** in `helm-charts/templates/secret.yaml` folder, replacing .dockerconfigjson value with the generated Docker credentials.
 
         *Note: For security reasons, credentials are not stored in GitHub; instead, they are injected dynamically during runtime.*
     - Refer to the [**Helm Charts Guide**](readmes/helm-charts.md) for details on using Helm charts to deploy the application on EKS.
@@ -509,7 +511,7 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
             steps {
                 withCredentials([string(credentialsId: 'docker-config-creds', variable: 'DOCKER_CONFIG_JSON')]) {
                     sh '''
-                    sed -i "s|dockerconfigjson: \"\"|dockerconfigjson: \\"$DOCKER_CONFIG_JSON\\"|" ./helm-chart/values.yaml
+                    sed -i "s|dockerconfigjson: \"\"|dockerconfigjson: \\"$DOCKER_CONFIG_JSON\\"|" ./helm-charts/values.yaml
                     '''
                 }
             }

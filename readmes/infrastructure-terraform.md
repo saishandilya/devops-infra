@@ -148,12 +148,12 @@ This Terraform project follows a modular structure to keep configurations organi
 3. **Initializing Terraform**
     ####  `local machine`
     ```hcl
-    Command: terraform init -backend-config="key=ec2/terraform.tfstate
+    Command: terraform init -backend-config="key=ec2/terraform.tfstate"
     ```
 
     ####  `jenkins pipeline for eks`
     ```hcl
-    Command: terraform init -backend-config="key=eks/terraform.tfstate
+    Command: terraform init -backend-config="key=eks/terraform.tfstate"
     ```
 
 4. **Validating Terraform**
