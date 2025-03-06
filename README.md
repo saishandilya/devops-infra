@@ -64,6 +64,7 @@ Refer to the [**Infrastructure Guide**](readmes/infrastructure-terraform.md) fil
 
 ### **2. Defining Terraform Variables for EC2**
 - Navigate to the **main.tf** file and review the configurations.
+- Navigate to **backend.tf** file and update `bucket` and `region` values with your S3 bucket name and region.
 - Create a **ec2.tfvars** file to define the necessary variables.
 
     #### `ec2.tfvars`  
