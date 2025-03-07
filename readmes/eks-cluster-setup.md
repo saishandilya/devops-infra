@@ -324,7 +324,16 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
   - **Branches to Build**: `main`  
 - Click **Apply & Save**. 
 
-3. **Webhook Configuration**(Need to work on this)
+3. **Webhook Configuration**
+    - Go to your GitHub **application repository**, click on `Settings`, scroll down to `Code and Automation`, select `Webhooks`, click `Add webhook`, and enter the **required password**.
+    - In the `Webhook Configuration` Page, provide the following details:
+        - Payload URL: `http://<jenkins-master-public-ip>:8080/github-webhook/`
+        - Content type: `application/json`
+        - Secret: `Null` **(Leave it empty unless you have a specific secret key)**
+        - SSL Verification: `Enable SSL verification`
+        - Trigger Events: `Select Just the push event`
+        - Click **Add Webhook** to save the configuration.
+    - Navigate to the **Jenkins Dashboard**, select the **Pipeline Job**, go to `Configure`, scroll down to `Build Triggers`, check the box for `GitHub hook trigger for GITScm polling`, then click **Apply and Save**.
 
 ## **Conclusion**  
 

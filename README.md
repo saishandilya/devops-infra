@@ -421,12 +421,99 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
         ```
 
 7. **Docker Image Creation**
-8. **Publish Docker Image to Jfrog & Docker Hub**
-9. **Test Container Creation using Docker Image**
+    - Create a `Dockerfile` or use the `existing Dockerfile` from the your application repository.
+        #### `Dockerfile`
+        ```Dockerfile
+        FROM tomcat:9  
+        MAINTAINER "devops"  
+        COPY ./taxi-booking/target/taxi-booking-1.0.1.war /usr/local/tomcat/webapps  
+        EXPOSE 8080
+        ```
+        - This Dockerfile uses the **tomcat:9 base image**, copies `taxi-booking-1.0.1.war` to the `/usr/local/tomcat/webapps` directory, and exposes port **8080**.
+    - **Create a Docker Repository**   
+        - Navigate to  your **Jfrog dashboard**, click `User Profile` in the top-right corner and select **Quick Repository Creation**, now choose **Docker**, click **Next**, provide a **repository prefix** (e.g., taxi), and click **Create** to generate repositories.
+    - Copy the code below and add it as a **new stage** in the Pipeline, this stage **Docker Image Creation**,builds two Docker images using the `Dockerfile`: one for `JFrog Artifactory` **(internal storage)** and another for `DockerHub` **(public or external use)**.
+        #### `Docker Image Creation Stage`
+        - This stage uses `docker.build()`, a built-in function provided by the `Docker Pipeline Plugin`, to build a **Docker image** using the `Dockerfile` in the current working directory. This ensures the application is packaged as a **Docker image** and stored in both **JFrog Artifactory and DockerHub**.
+        #### `Add Registry`
+        - define the **image names** and **version**
+        ```groovy
+        def imageNameJfrogArtifact = '<jfrog-docker-artifactory-name/app-name>' (e.g.,'taxi-booking-docker-local/taxi-app')
+        def imageNameDocker ='<docker-username/app-name>' (e.g., 'saishandilya/taxi-app')
+        def version   = '1.0.1'
+        ```
+        #### 
+        ```groovy
+        stage('Docker Image Creation') {
+            steps {
+                script {
+                  app = docker.build(imageNameJfrogArtifact+":"+version)
+                  app1 = docker.build(imageNameDocker+":"+version)
+                }
+            }
+        }
+        ```
+8. **Publish Docker Image**
+    - **Add Docker Credentials:** 
+        - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
+        - Select **Kind**: **SSH Username and Password** and provide the following details:
+            - **Username**: `<your docker hub user name>`
+            - **Password**: `<your docker hub password>`
+            - **ID**: `docker-cred`  
+            - **Description**: docker hub login credentials.
+        - Click **Create**.
+    - Copy the code below and add it as a **new stage** in the Pipeline. This stage, **Publish Docker Image**, publishes the previously built Docker images to JFrog Artifactory and DockerHub.
+        #### `Publish Docker Image Stage`
+        - This stage uses `docker.withRegistry()` to authenticate with **JFrog and DockerHub** using stored credentials and push the built Docker image (app) to the JFrog Artifactory and DockerHub.
+        #### `Add Registry`
+        ```groovy
+        def dockerRegistry='https://index.docker.io/v1/'
+        ```
+        #### 
+        #### 
+        ```groovy
+        stage('Publish Docker Image') {
+            steps {
+                script{
+                    docker.withRegistry(registry, 'jfrog-cred'){
+                        app.push()
+                    }
+                    docker.withRegistry(dockerRegistry, 'docker-cred'){
+                        app1.push()
+                    }
+                }
+            }
+        }
+        ```
+9. **Create Container using Docker Image**
+    - Copy the code below and add it as a **new stage** in the Pipeline. This stage, **Create Container using Docker Image**, checks for an existing container, removes it if found, and then creates a new one.
+        #### `Add Registry`
+        ```groovy
+        def containerName = imageNameDocker.split('/')[1]
+        ```
+        #### 
+        #### 
+        ```groovy
+        stage('Create Container using Docker Image') {
+            steps {
+                sh """
+                    echo "Container Name: ${containerName}"
+                    # Check if container exists (running or stopped)
+                    if [ -n "\$(docker ps -a -q -f name=^${containerName}\$)" ]; then
+                        echo "Container ${containerName} is running or stopped. Removing it..."
+                        docker rm -f ${containerName}
+                    fi
+                    echo "Running a new Container Named ${containerName}..."
+                    docker run -d --name ${containerName} -p 8000:8080 ${imageNameDocker}:${version}
+                    echo "New container ${containerName} is now running."
+                """
+            }
+        }
+        ```
 10. **Cluster Validation**
     <!-- **Prerequisite:**  -->
     - This stage requires an existing **EKS cluster**. 
-        - If you do not have an **EKS cluster** and are setting it up for the first time, follow the steps in the [**EKS Cluster Setup Guide**](readmes/eks-cluster-setup.md) to create one. Once completed, return to this step.
+        - If you don't have an **EKS cluster** and are setting it up for the first time, or if you *skipped* **Step 7** in `Infrastructure Setup` i.e., **`Deploy EKS`** follow the steps in the [**EKS Cluster Setup Guide**](readmes/eks-cluster-setup.md) to create one. Once completed, return to this step.
         - If an **EKS cluster** already exists, you can skip the creation step and proceed.
 
     - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Cluster Validation** fetches the **EKS cluster** status using **AWS CLI**. If the cluster status is `"ACTIVE"`, it prints a **success message**. If the cluster is either **not found or not active**, it prints an **error message** and **exits** the pipeline with failure.
@@ -641,68 +728,77 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
 
 ### **3. Jenkinsfile and Webhook Configuration**
 1. **Running the Pipeline Directly in Jenkins**  
-- After adding all the above stages to the pipeline, **Validate** the pipeline script and check for any **syntax issues**.  
-- Click **Save & Apply**.  
-- Run the pipeline by clicking **Build with Parameters**. Choose **deploy** to deploy the application or **uninstall** to remove the application.
+    - After adding all the above stages to the pipeline, **Validate** the pipeline script and check for any **syntax issues**.  
+    - Click **Save & Apply**.  
+    - Run the pipeline by clicking **Build with Parameters**. Choose **deploy** to deploy the application or **uninstall** to remove the application.
 
 2. **Using a Jenkinsfile from GitHub**
-- Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned application repository by replacing it with your custom values.  
-- In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
-- Select **SCM** as **Git** and provide the following details:  
-  - **Repository URL**: `<your GitHub repository URL>`  
-  - **Credentials**: `<your Git credentials>`  
-  - **Branches to Build**: `main`  
-- Click **Apply & Save**.
+    - Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned application repository by replacing it with your custom values.  
+    - In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
+    - Select **SCM** as **Git** and provide the following details:  
+    - **Repository URL**: `<your GitHub repository URL>`  
+    - **Credentials**: `<your Git credentials>`  
+    - **Branches to Build**: `main`  
+    - Click **Apply & Save**.
 
-3. **Webhook Configuration** (Need to work on this)
+3. **Webhook Configuration**
+    - Go to your GitHub **application repository**, click on `Settings`, scroll down to `Code and Automation`, select `Webhooks`, click `Add webhook`, and enter the **required password**.
+    - In the `Webhook Configuration` Page, provide the following details:
+        - Payload URL: `http://<jenkins-master-public-ip>:8080/github-webhook/`
+        - Content type: `application/json`
+        - Secret: `Null` **(Leave it empty unless you have a specific secret key)**
+        - SSL Verification: `Enable SSL verification`
+        - Trigger Events: `Select Just the push event`
+        - Click **Add Webhook** to save the configuration.
+    - Navigate to the **Jenkins Dashboard**, select the **Pipeline Job**, go to `Configure`, scroll down to `Build Triggers`, check the box for `GitHub hook trigger for GITScm polling`, then click **Apply and Save**.
 
 ### **4. Application Validation and Monitoring**
 1. **Verify Application Deployment Status**
-- Login to the **Jenkins Slave machine** and run the command:
-    ```sh
-    kubectl get all -n <custom namespace>
-    ```
-- Copy the **Load Balancer URL** or go to AWS console and LoadBalancer and fetch DNS Name.
-- Open a browser and access the application using the ALB URL, appending port 8001 and the application name.
-    #### Example:
-    ```sh
-    http://<LoadBalancer-DNS>:8001/taxi-booking-1.0.1/
-    ```
+    - Login to the **Jenkins Slave machine** and run the command:
+        ```sh
+        kubectl get all -n <custom namespace>
+        ```
+    - Copy the **Load Balancer URL** or go to AWS console and LoadBalancer and fetch DNS Name.
+    - Open a browser and access the application using the ALB URL, appending port 8001 and the application name.
+        #### Example:
+        ```sh
+        http://<LoadBalancer-DNS>:8001/taxi-booking-1.0.1/
+        ```
 2. **Access Prometheus Dashboard**
-- Run the command on the Jenkins Slave machine:
-    ```sh
-    kubectl get all -n monitoring
-    ```
-- Identify the `service/prometheus-kube-prometheus-prometheus`.
-- Fetch the **LoadBalancer DNS name** and access **Prometheus** on port `9090`.
-    ```sh
-    http://<LoadBalancer-DNS>:9090
-    ```
-    *Note: If a security warning appears, click "Continue to site"*
-- Navigate to **Status** > **Targets** to view service details.
+    - Run the command on the Jenkins Slave machine:
+        ```sh
+        kubectl get all -n monitoring
+        ```
+    - Identify the `service/prometheus-kube-prometheus-prometheus`.
+    - Fetch the **LoadBalancer DNS name** and access **Prometheus** on port `9090`.
+        ```sh
+        http://<LoadBalancer-DNS>:9090
+        ```
+        *Note: If a security warning appears, click "Continue to site"*
+    - Navigate to **Status** > **Targets** to view service details.
 3. **Access Grafana Dashboard**
-- From the response of the above command (`kubectl get all -n monitoring`), find `service/prometheus-grafana`.
-- Fetch the **LoadBalancer DNS name** and access **Grafana** (Grafana runs on port 80 by default).
-    ```sh
-    http://<LoadBalancer-DNS>
-    ```
-- Wait a few minutes if the application doesn’t load immediately.
-- **Login Credentials**:
-    - **Username:** `admin`
-    - **Password:** `prom-operator`
+    - From the response of the above command (`kubectl get all -n monitoring`), find `service/prometheus-grafana`.
+    - Fetch the **LoadBalancer DNS name** and access **Grafana** (Grafana runs on port 80 by default).
+        ```sh
+        http://<LoadBalancer-DNS>
+        ```
+    - Wait a few minutes if the application doesn’t load immediately.
+    - **Login Credentials**:
+        - **Username:** `admin`
+        - **Password:** `prom-operator`
 
 ### **5. Cleanup Process**
 1. **Uninstall Application and Monitoring Stack**
-- In the **application pipeline**, click `Build with Parameters` and choose **uninstall**.
-- This triggers the `Uninstall monitoring using Helm` stage, which removes the **monitoring stack** and **application**.
+    - In the **application pipeline**, click `Build with Parameters` and choose **uninstall**.
+    - This triggers the `Uninstall monitoring using Helm` stage, which removes the **monitoring stack** and **application**.
 2. **EKS Cluster Cleanup**
-- In the **infrastructure pipeline**, click `Build with Parameters` and choose **destroy**.
-- This triggers the `Terraform Destroy` stage, which deletes the **EKS cluster**.
-- The process may take 15–20 minutes to complete.
+    - In the **infrastructure pipeline**, click `Build with Parameters` and choose **destroy**.
+    - This triggers the `Terraform Destroy` stage, which deletes the **EKS cluster**.
+    - The process may take 15–20 minutes to complete.
 3. **Infrastucture Cleanup**
-- On the **local machine**, navigate to the `infrastructure` folder.
-- Run the command: `terraform destroy --auto-approve`.
-- This removes the **three EC2 instances** used for the `Ansible` and `Jenkins Master-Slave` configuration.
+    - On the **local machine**, navigate to the `infrastructure` folder.
+    - Run the command: `terraform destroy --auto-approve`.
+    - This removes the **three EC2 instances** used for the `Ansible` and `Jenkins Master-Slave` configuration.
 
 ## **Conclusion**  
 
