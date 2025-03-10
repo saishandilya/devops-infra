@@ -32,7 +32,7 @@ Before starting this project, ensure you have the following installed and config
 - Create a **security group** with **SSH, HTTP, and HTTPS** access.
 - If using **EC2 Instance Connect**, open **SSH** to the **EC2 Instance Connect address**. Otherwise, if using **Git Bash**, open **SSH** to your **home network's IP address**.
 - Create an **S3** bucket to store the Terraform State file.
-- Create an **EC2** Instance **Key Pair**.
+- Create an **EC2** Instance **Key Pair**, name it `devops-master-key.pem`.
 
 ### **4. Additional Setup**
 - Configure `IAM user credentials` *(created above)* on the local machine using (`aws configure`).
@@ -41,7 +41,7 @@ Before starting this project, ensure you have the following installed and config
 - Create a new or use an existing **GitHub account**.
 
 ## Architectural Diagram
-- Needed to be added...
+- *Working on the Architectural Diagram will be added soon..*
 
 ## Infrastructure Setup
 
@@ -89,7 +89,7 @@ Run the following commands to initialize Terraform and deploy the infrastructure
 terraform init -backend-config="key=ec2/terraform.tfstate"
 terraform validate
 terraform plan -target="module.ec2" -var-file="ec2.tfvars" -out=ec2plan
-terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
+terraform apply "ec2plan"
 ```
 
 ### **4. Jenkins Portal Setup**  
@@ -170,8 +170,9 @@ terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
 - Log in to **GitHub**, go to **User Profile → Settings → Developer Settings → Personal Access Tokens → Tokens (Classic)**, click **Generate New Token (Classic)**, enter your password, provide a **Note Name** (e.g., `GitHub Token`), select the **necessary scope permissions** (or select all checkboxes), and click **Generate Token**.
 - **Add GitHub Credentials:** 
     - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
-    - Select **Kind**: **Secret Text** and provide the following details:
-        - **Secret**: Copy & Paste generated `GitHub Token`. 
+    - Select **Kind**: **UserName with Password** and provide the following details:
+        - **Username**: `<provide your git-hub username>`. 
+        - **Password**: Copy & Paste generated `GitHub Personal Access Token`. 
         - **ID**: `git-credentials`  
         - **Description**: Git Personal Access Token.
     - Click **Create**.

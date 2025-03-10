@@ -1,9 +1,9 @@
 # Infrastructure Terraform
 
 ## 1. Introduction
-This Terraform code consists of two modules: 
-1. **EC2** - Provisions *three* EC2 instances for the **Ansible control node, Jenkins master,** and **Jenkins slave**. It also **ensures connectivity** between Ansible and the Jenkins nodes for seamless software installation.
-2. **EKS** - Sets up an **EKS cluster** along with essential components, including the **Cluster Role, Worker Node Group, Worker Node Security Group,** and **Worker Node Role**.
+This repository contains Terraform code with two modules:
+1. **EC2** - This module provisions *three* EC2 instances for the **Ansible control node, Jenkins master,** and **Jenkins slave**. It also **ensures connectivity** between Ansible and the Jenkins nodes for seamless software installation.
+2. **EKS** - This module sets up an **EKS cluster** along with essential components, including the **Cluster Role, Worker Node Group, Worker Node Security Group,** and **Worker Node Role**.
 
 ## 2. Project Structure
 This section explains the structure of the repository and the purpose of each file and folder.
@@ -27,6 +27,8 @@ This section explains the structure of the repository and the purpose of each fi
 │
 │── /readmes                                # Folder containing detailed documentation files
 │   ├── infrastructure-terraform.md         # Detailed guide on EC2 & EKS provisioning
+│   ├── eks-cluster-setup.md                # Detailed guide on EKS Cluster setup using Terraform
+│   ├── helm-charts.md                      # Detailed guide on custom helm chart creation and implementation
 │
 ├── backend.tf                              # Configures remote Terraform backend (S3)  
 ├── main.tf                                 # Calls EC2 and EKS modules  
@@ -40,11 +42,11 @@ This section explains the structure of the repository and the purpose of each fi
 ```
 
 #### Explanation of Key Components
-- `/modules/ec2` – Manages 3 EC2 instances, including remote ssh connectivity and user data for provisioning software.
-- `/modules/ec2/files` – Contains essential configuration files and scripts required for provisioning and setup. This includes Ansible inventory file, Private SSH key, Playbooks for jenkins master and slave nodes.
+- `/modules/ec2` – Manages the provisioning of 3 EC2 instances, including remote SSH connectivity and user data for software installation.
+- `/modules/ec2/files` – Contains essential configuration files and scripts required for provisioning and setup, including the Ansible inventory file, private SSH key, and playbooks for the Jenkins master and slave nodes.
 - `/modules/eks` – Deploys an EKS cluster with worker nodes, worker node security group and required IAM roles.
 - `/readmes` – Folder contains detailed documentation files, each explaining different components of the project.
-- `backend.tf` – Stores Terraform state file remotely in an S3 bucket to enable team collaboration.
+- `backend.tf` – Stores the Terraform state file configuration remotely in an S3 bucket to enable team collaboration.
 - `main.tf` – Calls the EC2 and EKS modules to deploy resources.
 - `provider.tf` – Defines AWS as the cloud provider and sets up authentication.
 - `variables.tf` – Stores input variables used across Terraform configurations.
@@ -125,6 +127,8 @@ This Terraform project follows a modular structure to keep configurations organi
     ```
 
 2. **Configuring Terraform Variables**
+
+    Create two `.tfvars` files, `ec2.tfvars` and `eks.tfvars`, to pass values to the Terraform code. Below are the sample required parameters; replace the values with your own configuration."
     #### `ec2.tfvars`  
 
     ```hcl
@@ -145,43 +149,58 @@ This Terraform project follows a modular structure to keep configurations organi
     instance_key_name           =   "devops-master-key"
     ```
 
-3. **Initializing Terraform**
+3. **EC2 Infrastructure Deployment**
+
+    Use the following commands from your `local machine` to deploy the EC2 module for provisioning instances.
     ####  `local machine`
-    ```hcl
-    Command: terraform init -backend-config="key=ec2/terraform.tfstate"
-    ```
+    1. `terraform initialize`
 
-    ####  `jenkins pipeline for eks`
-    ```hcl
-    Command: terraform init -backend-config="key=eks/terraform.tfstate"
-    ```
+        ```hcl
+        Command: terraform init -backend-config="key=ec2/terraform.tfstate"
+        ```
+    2. `terraform validate`
 
-4. **Validating Terraform**
-    ####  `local machine` or `jenkins pipeline`
-    ```hcl
-    Command: terraform validate
-    ```
+        ```hcl
+        Command: terraform validate
+        ```
+    3. `terraform plan`
 
-5. **Plan Infrastructure**
-    ####  `local machine`
-    ```hcl
-    Command: terraform plan -target="module.ec2" -var-file="ec2.tfvars" -out=ec2plan
-    ```
+        ```hcl
+        Command: terraform plan -target="module.ec2" -var-file="ec2.tfvars" -out=ec2plan
+        ```
 
-    ####  `jenkins pipeline for eks`
-    ```hcl
-    Command: terraform plan -target="module.eks" -var-file="eks.tfvars" -out=eksplan
-    ```
-6. **Deploying Infrastructure**
-    ####  `local machine`
-    ```hcl
-    Command: terraform apply -target="module.ec2" -var-file="ec2.tfvars" -auto-approve
-    ```
+    4. `terraform apply`
 
-    ####  `jenkins pipeline for eks`
-    ```hcl
-    Command: terraform apply -target="module.eks" -var-file="eks.tfvars" -auto-approve
-    ```
+        ```hcl
+        Command: terraform apply "ec2plan"
+        ```
+
+4. **EKS Infrastructure Deployment**
+
+    Use the following commands from `jenkins pipeline for eks` to deploy the EKS module for cluster creation.
+    ####  `Jenkins pipeline`
+    1. `terraform initialize`
+
+        ```hcl
+        Command: terraform init -backend-config="key=eks/terraform.tfstate"
+        ```
+    2. `terraform validate`
+
+        ```hcl
+        Command: terraform validate
+        ```
+
+    3. `terraform plan`
+
+        ```hcl
+        Command: terraform plan -target="module.eks" -var-file="eks.tfvars" -out=eksplan
+        ```
+
+    4. `terraform apply`
+
+        ```hcl
+        Command: terraform apply -target="module.eks" -var-file="eks.tfvars" -auto-approve
+        ```
 
 ## 6. CleanUp
 To ensure a clean and efficient environment, follow these steps to remove resources after usage.
