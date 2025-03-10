@@ -208,7 +208,7 @@ terraform apply "ec2plan"
                 stage('Checkout') {
                     steps {
                         echo 'Fetching application code from GitHub'
-                        git branch: 'main', credentialsId: 'git-token', url: '<your github repo url>'
+                        git branch: 'main', url: '<your github repo url>'
                         script {
                             GIT_COMMIT = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
                             echo "Current Git Commit ID: ${GIT_COMMIT}"

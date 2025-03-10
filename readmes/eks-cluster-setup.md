@@ -164,10 +164,6 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
                     steps {
                         echo 'Fetching Infra code from GitHub'
                         git branch: 'main', url: 'https://github.com/<your user name>/devops-infra.git'
-                        script {
-                            env.GIT_COMMIT = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
-                            echo "Current Git Commit ID: ${env.GIT_COMMIT}"
-                        }
                     }
                 }
             }
