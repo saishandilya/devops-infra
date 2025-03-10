@@ -1,184 +1,90 @@
-def registry = "<your jfrog-registry url>"
-def imageNameJfrogArtifact = "<jfrog-docker-artifactory-name/app-name>"
-def imageNameDocker = "<docker-username/app-name>"
-def dockerRegistry = "https://index.docker.io/v1/"
-def containerName = imageNameDocker.split('/')[1]
-def version   = "1.0.1"
-
 pipeline {
+
     agent { node { label 'slave' } }
 
-    parameters {
-        choice(name: 'ACTION', choices: ['deploy', 'uninstall'], description: 'Choose deploy or uninstall')
-    }
+    tools { terraform 'terraform' }
 
     environment {
-        GIT_COMMIT          = ""
-        PATH                = "/opt/apache-maven-3.9.6/bin:$PATH"
-        SONAR_TOKEN         = credentials('sonar-token')
-        SONAR_PROJECT_KEY   = "<your sonar project key>"
-        SONAR_ORG           = "<your sonar organisation name>"
+        BUCKET_NAME = "infra-backend-statefile"
+        PLAN_NAME   = ""
+    }
+
+    parameters {
+        choice(name: 'ACTION', choices: ['apply', 'destroy'], description: 'Choose Terraform action to perform')
     }
 
     stages {
-        stage('Fetch Git Commit ID') {
+        stage('Terraform Init') {
             steps {
-                echo 'Fetching latest Git Commit ID'
+                echo 'Terraform Initialization...!!!'
+                // Ensure Terraform is properly initialized
+                sh 'terraform init -backend-config="key=eks/terraform.tfstate"'
+            }
+        }
+
+        stage('Terraform Validate') {
+            steps {
+                echo 'Terraform code Validation...!!!'
+                // Terraform validate
+                sh 'terraform validate'
+            }
+        }
+
+        stage('Terraform Plan') {
+            when {
+                expression { params.ACTION == 'apply' }
+            }
+            steps {
+                echo 'Terraform Planning...!!!'
                 script {
-                    GIT_COMMIT = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
-                    echo "Current Git Commit ID: ${GIT_COMMIT}"
+                    // Generate a unique plan name based on the current date and time
+                    PLAN_NAME = "eksplan-" + sh(script: 'date +%Y%m%d-%H%M%S', returnStdout: true).trim()
+                    JSON_PLAN_NAME = "${PLAN_NAME}.json"
                 }
-            }
-        }
+                echo "Plan Name: ${PLAN_NAME}"
 
-        stage('Compile & Build') {
-            when {
-                expression { params.ACTION == 'deploy' }
-            }
-            steps {
-                echo 'Compiling and Building the application code using Apache Maven'
-                sh 'mvn compile && mvn clean package'
-            }
-        }
-
-        stage('Generate Test Report') {
-            when {
-                expression { params.ACTION == 'deploy' }
-            }
-            steps {
-                echo "Generating test reports for the application code using Maven Surefire plugin"
-                sh 'mvn test surefire-report:report'
-            }
-        }
-
-        stage('Code Quality Analysis') {
-            when {
-                expression { params.ACTION == 'deploy' }
-            }
-            steps {
-                echo "Performing Static Code Quality Analysis"
-                sh  """
-                    mvn sonar:sonar \
-                        -Dsonar.organization=${SONAR_ORG} \
-                        -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
-                        -Dsonar.host.url=https://sonarcloud.io \
-                        -Dsonar.token=${SONAR_TOKEN}
+                withCredentials([file(credentialsId: 'eks-tfvars', variable: 'TFVARS_FILE')]) {
+                    // Run the terraform plan command and output the plan in JSON format
+                    sh """
+                        terraform plan -target="module.eks" -var-file="\$TFVARS_FILE" -out="${PLAN_NAME}"
+                        terraform show -json ${PLAN_NAME} > ${JSON_PLAN_NAME}
                     """
+
+                    sh "aws s3 cp ${JSON_PLAN_NAME} s3://${BUCKET_NAME}/eks-terraform-plan/"
+                }
             }
         }
 
-        stage('Quality Gate Check') {
+        stage('Terraform Apply') {
             when {
-                expression { params.ACTION == 'deploy' }
+                expression { params.ACTION == 'apply' }
             }
             steps {
-                echo "Validating code quality against Bugs Quality gate metrics"
-                script {
-                    timeout(time: 5, unit: 'MINUTES') { // Wait for SonarCloud processing
-                        sh 'sudo apt-get install -y jq || sudo yum install -y jq'
-                        def status = checkSonarCloudQualityGate()
-                        if (status == "ERROR") {
-                            error "Quality Gate failed. Bugs exceed the threshold!"
-                        } else {
-                            echo "Quality Gate passed."
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Publish Artifacts To Jfrog') {
-            when {
-                expression { params.ACTION == 'deploy' }
-            }
-            steps {
-                echo "Publishing Artifacts to JFrog repository"
-                script {
-                    // 1️⃣ Connect to JFrog Artifactory server using Jenkins Artifactory Plugin
-                    def server = Artifactory.newServer(
-                        url: registry + "/artifactory", 
-                        credentialsId: "jfrog-token"
-                    )
-                    
-                    // 2️⃣ Define metadata properties for tracking builds
-                    def properties = "buildid=${env.BUILD_ID},commitid=${GIT_COMMIT}"
-                    
-                    echo "Workspace Path: ${env.WORKSPACE}"
-
-                    // 3️⃣ Upload specification (Fixed file pattern issue)
-                    def uploadSpec = """{
-                        "files": [
-                            {
-                                "pattern": "${env.WORKSPACE}/<jenkins pipeline name>/target/(*)",
-                                "target": "<repository prefix name>-libs-release-local/{1}",
-                                "flat": "true",
-                                "props": "${properties}"
-                            }
-                        ]
-                    }"""
-
-                    // 4️⃣ Upload JAR file using Artifactory plugin
-                    def buildInfo = server.upload(uploadSpec)
-
-                    // 5️⃣ Collect build environment details
-                    buildInfo.env.collect()
-
-                    // 6️⃣ Publish build information to JFrog Artifactory
-                    server.publishBuildInfo(buildInfo)
-                }
-            }
-        }
-
-        stage('Docker Image Creation') {
-            steps {
-                script {
-                app = docker.build(imageNameJfrogArtifact+":"+version)
-                app1 = docker.build(imageNameDocker+":"+version)
-                }
-            }
-        }
-
-        stage('Publish Docker Image') {
-            steps {
-                script{
-                    docker.withRegistry(registry, 'jfrog-token'){
-                        app.push()
-                    }
-                    docker.withRegistry(dockerRegistry, 'docker-creds'){
-                        app1.push()
-                    }
-                }
-            }
-        }
-
-        stage('Create Container using Docker Image') {
-            steps {
+                echo 'Terraform Applying Infrastructure Plan...!!!'
                 sh """
-                    echo "Container Name: ${containerName}"
-                    # Check if container exists (running or stopped)
-                    if [ -n "\$(docker ps -a -q -f name=^${containerName}\$)" ]; then
-                        echo "Container ${containerName} is running or stopped. Removing it..."
-                        docker rm -f ${containerName}
+                    if [ ! -f "${PLAN_NAME}" ]; then
+                        echo "ERROR: Plan file not found: ${PLAN_NAME}" >&2
+                        exit 1
                     fi
-                    echo "Running a new Container Named ${containerName}..."
-                    docker run -d --name ${containerName} -p 8000:8080 ${imageNameDocker}:${version}
-                    echo "New container ${containerName} is now running."
+
+                    terraform apply "${PLAN_NAME}"
                 """
             }
         }
 
+        stage('Terraform Destroy') {
+            when {
+                expression { params.ACTION == 'destroy' }
+            }
+            steps {
+                echo 'Terraform Destroying Infrastructure...!!!'
+                withCredentials([file(credentialsId: 'eks-tfvars', variable: 'TFVARS_FILE')]) {
+                    sh """
+                        terraform destroy -target="module.eks" -var-file="\$TFVARS_FILE" -auto-approve
+                    """
+                }
+            }
+        }
+
     }
-}
-
-def checkSonarCloudQualityGate() {
-    def response = sh(
-        script: """
-            curl -s -u ${SONAR_TOKEN}: \
-            "https://sonarcloud.io/api/qualitygates/project_status?projectKey=${SONAR_PROJECT_KEY}" \
-            | jq -r '.projectStatus.status'
-        """,
-        returnStdout: true
-    ).trim()
-
-    return response  // "OK" if passed, "ERROR" if failed
 }

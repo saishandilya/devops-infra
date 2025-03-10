@@ -172,20 +172,13 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
 
 2. **Terraform Init Stage** 
     - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage initializes a Terraform working directory.
-    - Setting the **WORKDIR** in `environment` section which Terraform should execute **init, plan, apply, and destroy.**
-        ```groovy
-        environment {
-            WORKDIR = <your pipeline name> # (e.g.,'eks-infra-using-pipeline')
-        }
-        ```
         #### `Terraform Init Stage`
         ```groovy
         stage('Terraform Init') {
             steps {
-                echo 'Terraform Initiation...!!!'
-                dir("${WORKDIR}") {
-                    sh 'terraform init -backend-config="key=eks/terraform.tfstate"'                    
-                }
+                echo 'Terraform Initialization...!!!'
+                // Ensure Terraform is properly initialized
+                sh 'terraform init -backend-config="key=eks/terraform.tfstate"'
             }
         }
         ```
@@ -197,9 +190,8 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
         stage('Terraform Validate') {
             steps {
                 echo 'Terraform code Validation...!!!'
-                dir("${WORKDIR}") {
-                    sh 'terraform validate'
-                }
+                // Terraform validate
+                sh 'terraform validate'
             }
         }
         ```
@@ -216,17 +208,18 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
         public_subnet_id_list       =   <list of subnets> (e.g., ["subnet-xxxxxxxxxx", "subnet-xxxxxxxxxx", "subnet-xxxxxxxxxx"])
         instance_key_name           =   "devops-master-key"
         ```
-    - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
+    - Go to **Manage Jenkins → Credentials**, select **Global**, and click **Add Credentials**.
         - Select **Kind**: **Secret File** and provide the following details:
         - **File**: `choose file` (upload the eks.tfvars)
         - **ID**: `eks-tfvars`  
-        - **Description**: EKS Cluster infra .tfvars variables file
+        - **Description**: EKS cluster .tfvars variables file.
         - Click **Create**.
-    - Copy the code below and add it as a **new stage** in the pipeline. This stage plans the Terraform code to create the EKS infrastructure, generates a plan file, and copies `eks.plan` to an S3 bucket.
+    - Copy the code below and add it as a **new stage** in the pipeline. This stage plans the Terraform code to create the EKS infrastructure, generates a plan file, and copies `eks.plan` file to an S3 bucket, helping identify the changes made from the previous release.
     - Copy the code below and add it `environment` section. This helps storing plan in the S3 Bucket.
         ```groovy
         environment {
             BUCKET_NAME = '<your terraform backend s3 bucket>' # (e.g., s3-backend-bucket)
+            PLAN_NAME   = ""
         }
         ```
     - Add a `parameters` section to enable `Build with Parameters` in the pipeline, allowing users to decide which **actions** to perform during the build.
@@ -244,17 +237,21 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
             }
             steps {
                 echo 'Terraform Planning...!!!'
-                dir("${WORKDIR}") {
-                    script {
-                        env.PLAN_NAME = "eksplan-" + sh(script: 'date +%Y%m%d-%H%M%S', returnStdout: true).trim()
-                    }
-                    echo "${env.PLAN_NAME}"
-                    withCredentials([file(credentialsId: 'eks-tfvars', variable: 'TFVARS_FILE')]) {
-                        sh """
-                            terraform plan -target="module.eks" -var-file="\$TFVARS_FILE" -out="${env.PLAN_NAME}"
-                        """
-                        sh "aws s3 cp ${env.PLAN_NAME} s3://${BUCKET_NAME}/terraform-plan/"
-                    }
+                script {
+                    // Generate a unique plan name based on the current date and time
+                    PLAN_NAME = "eksplan-" + sh(script: 'date +%Y%m%d-%H%M%S', returnStdout: true).trim()
+                    JSON_PLAN_NAME = "${PLAN_NAME}.json"
+                }
+                echo "Plan Name: ${PLAN_NAME}"
+
+                withCredentials([file(credentialsId: 'eks-tfvars', variable: 'TFVARS_FILE')]) {
+                    // Run the terraform plan command and output the plan in JSON format
+                    sh """
+                        terraform plan -target="module.eks" -var-file="\$TFVARS_FILE" -out="${PLAN_NAME}"
+                        terraform show -json ${PLAN_NAME} > ${JSON_PLAN_NAME}
+                    """
+
+                    sh "aws s3 cp ${JSON_PLAN_NAME} s3://${BUCKET_NAME}/eks-terraform-plan/"
                 }
             }
         }
@@ -270,16 +267,14 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
             }
             steps {
                 echo 'Terraform Applying Infrastructure Plan...!!!'
-                dir("${WORKDIR}") {
-                    sh """
-                        if [ ! -f "${env.PLAN_NAME}" ]; then
-                            echo "ERROR: Plan file not found: ${env.PLAN_NAME}" >&2
-                            exit 1
-                        fi
+                sh """
+                    if [ ! -f "${PLAN_NAME}" ]; then
+                        echo "ERROR: Plan file not found: ${PLAN_NAME}" >&2
+                        exit 1
+                    fi
 
-                        terraform apply -target="module.eks" -auto-approve "${env.PLAN_NAME}"
-                    """
-                }
+                    terraform apply "${PLAN_NAME}"
+                """
             }
         }
         ```
@@ -293,12 +288,10 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
             }
             steps {
                 echo 'Terraform Destroying Infrastructure...!!!'
-                dir("${WORKDIR}") {
-                    withCredentials([file(credentialsId: 'eks-tfvars', variable: 'TFVARS_FILE')]) {
-                        sh """
-                            terraform destroy -target="module.eks" -var-file="\$TFVARS_FILE" -auto-approve
-                        """
-                    }
+                withCredentials([file(credentialsId: 'eks-tfvars', variable: 'TFVARS_FILE')]) {
+                    sh """
+                        terraform destroy -target="module.eks" -var-file="\$TFVARS_FILE" -auto-approve
+                    """
                 }
             }
         }
@@ -312,7 +305,9 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
 - Run the pipeline by clicking **Build with Parameters**. Choose **apply** to create resources or **destroy** to delete them.  
 
 2. **Using a Jenkinsfile from GitHub**  
-- Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned infra repository by replacing it with your custom values.  
+- Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned infra repository by replacing it with your custom values. 
+    #### `custom values`
+    - BUCKET_NAME = `<your terraform backend s3 bucket>` # (e.g., s3-backend-bucket)
 - In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
 - Select **SCM** as **Git** and provide the following details:  
   - **Repository URL**: `<your GitHub repository URL>`  

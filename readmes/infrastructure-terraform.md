@@ -199,7 +199,7 @@ This Terraform project follows a modular structure to keep configurations organi
     4. `terraform apply`
 
         ```hcl
-        Command: terraform apply -target="module.eks" -var-file="eks.tfvars" -auto-approve
+        Command: terraform apply "eksplan"
         ```
 
 ## 6. CleanUp
