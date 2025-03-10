@@ -470,12 +470,12 @@ terraform apply "ec2plan"
         ```
 8. **Publish Docker Image**
     - **Add Docker Credentials:** 
-        - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
-        - Select **Kind**: **SSH Username and Password** and provide the following details:
+        - Go to **Manage Jenkins → Credentials**, select **Global**, and click **Add Credentials**.
+        - Select **Kind**: **Username with password** and provide the following details:
             - **Username**: `<your docker hub user name>`
             - **Password**: `<your docker hub password>`
-            - **ID**: `docker-cred`  
-            - **Description**: docker hub login credentials.
+            - **ID**: `docker-creds`  
+            - **Description**: docker hub user login credentials.
         - Click **Create**.
     - Copy the code below and add it as a **new stage** in the Pipeline. This stage, **Publish Docker Image**, publishes the previously built Docker images to JFrog Artifactory and DockerHub.
         #### `Publish Docker Image Stage`
@@ -493,7 +493,7 @@ terraform apply "ec2plan"
                     docker.withRegistry(registry, 'jfrog-token'){
                         app.push()
                     }
-                    docker.withRegistry(dockerRegistry, 'docker-cred'){
+                    docker.withRegistry(dockerRegistry, 'docker-creds'){
                         app1.push()
                     }
                 }

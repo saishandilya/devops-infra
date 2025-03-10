@@ -1,6 +1,8 @@
 def registry = "<your jfrog-registry url>"
 def imageNameJfrogArtifact = "<jfrog-docker-artifactory-name/app-name>"
 def imageNameDocker = "<docker-username/app-name>"
+def dockerRegistry = "https://index.docker.io/v1/"
+def containerName = imageNameDocker.split('/')[1]
 def version   = "1.0.1"
 
 pipeline {
@@ -11,11 +13,11 @@ pipeline {
     }
 
     environment {
-        GIT_COMMIT = ""
-        PATH="/opt/apache-maven-3.9.6/bin:$PATH"
-        SONAR_TOKEN=credentials('sonar-token')
-        SONAR_PROJECT_KEY="<your sonar project key>"
-        SONAR_ORG="<your sonar organisation name>"
+        GIT_COMMIT          = ""
+        PATH                = "/opt/apache-maven-3.9.6/bin:$PATH"
+        SONAR_TOKEN         = credentials('sonar-token')
+        SONAR_PROJECT_KEY   = "<your sonar project key>"
+        SONAR_ORG           = "<your sonar organisation name>"
     }
 
     stages {
@@ -133,6 +135,35 @@ pipeline {
                 app = docker.build(imageNameJfrogArtifact+":"+version)
                 app1 = docker.build(imageNameDocker+":"+version)
                 }
+            }
+        }
+
+        stage('Publish Docker Image') {
+            steps {
+                script{
+                    docker.withRegistry(registry, 'jfrog-token'){
+                        app.push()
+                    }
+                    docker.withRegistry(dockerRegistry, 'docker-creds'){
+                        app1.push()
+                    }
+                }
+            }
+        }
+
+        stage('Create Container using Docker Image') {
+            steps {
+                sh """
+                    echo "Container Name: ${containerName}"
+                    # Check if container exists (running or stopped)
+                    if [ -n "\$(docker ps -a -q -f name=^${containerName}\$)" ]; then
+                        echo "Container ${containerName} is running or stopped. Removing it..."
+                        docker rm -f ${containerName}
+                    fi
+                    echo "Running a new Container Named ${containerName}..."
+                    docker run -d --name ${containerName} -p 8000:8080 ${imageNameDocker}:${version}
+                    echo "New container ${containerName} is now running."
+                """
             }
         }
 
