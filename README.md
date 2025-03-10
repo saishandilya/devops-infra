@@ -118,21 +118,22 @@ terraform apply "ec2plan"
 ### **5. Configure Jenkins Master-Slave Setup**
 
 1. **Add SSH Credentials:** 
-    - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
+    - Go to **Manage Jenkins → Credentials**, select **Global**, and click **Add Credentials**.
     - Select **Kind**: **SSH Username with Private Key** and provide the following details:
         - **ID**: `master-slave`  
-        - **Description**: SSH PEM key to access the Slave Node from the Master
+        - **Description**: SSH PEM key to access the Slave Node from the Master Node.
         - **Username**: `ubuntu`
         - **Private Key**:
-            - Select **Enter Directly**
+            - Select **Enter Directly**, then click `add`
             - Copy and paste the contents of `<ec2-instance.pem>` key
-        - Click **Save**.  
+        - **Passphrase**: (optional) Leave empty
+        - Click **Create**.
 
 2. **Add and Configure Slave Node:**
     - Navigate to **Manage Jenkins → Nodes** and click on **New Node**.
-    - Enter a **Node Name** (e.g., `slave-node`), select **Permanent Agent**, and click **Create**.  
+    - Enter a **Node Name** (e.g., `slave-node`), for **Type** select `Permanent Agent`, and click **Create**.  
     - Configure the new node with the following settings:  
-        - **Description**: (Optional)  Slave node to build Artifact , Docker Images and Application deployment on Kubernates.
+        - **Description**: (Optional)  Slave node to build artifacts , docker image and application deployment on k8s using helm charts.
         - **Number of Executors**: `2`  
         - **Remote Root Directory**: `/home/ubuntu/jenkins`  
         - **Label**: `slave`  
@@ -150,7 +151,7 @@ terraform apply "ec2plan"
    - **Artifactory**  
    - **Pipeline: Stage View**  
    - **Docker Pipeline**  
-   - **Terraform Plugin**  
+   - **Terraform**  
 - Click **Install** to begin the installation.
 
 ### **7. Deploy EKS** (Optional)
@@ -158,7 +159,7 @@ terraform apply "ec2plan"
 - If you are setting up an EKS cluster for the first time, refer to the [**EKS Cluster Setup Guide**](readmes/eks-cluster-setup.md) for detailed instructions.
 
 *Note: If you have been working on the project for more than a day, clean up the resources to avoid billing. You can recreate the cluster as part of the **application deployment** stages, before the `Cluster Validation` stage.*
-## Application Setup  (Under Process can still be optimised...)
+## Application Setup
 
 ### **1. Clone the Application Repository**
 - **Clone & push or Fork** the Application repository to your GitHub account to set up your local development environment.
@@ -167,23 +168,23 @@ terraform apply "ec2plan"
     ```
 
 ### **2. Jenkins Pipeline Configuration**
-- Log in to **GitHub**, go to **User Profile → Settings → Developer Settings → Personal Access Tokens → Tokens (Classic)**, click **Generate New Token (Classic)**, enter your password, provide a **Note Name** (e.g., `GitHub Token`), select the **necessary scope permissions** (or select all checkboxes), and click **Generate Token**.
+- Log in to **GitHub**, go to **User Profile → Settings → Developer Settings → Personal Access Tokens → Tokens (Classic)**, click **Generate New Token (Classic)**, enter your password, provide a **Note Name** (e.g., `Jenkins Access Token`), select the **necessary scope permissions** (or select all checkboxes), and click **Generate Token**.
 - **Add GitHub Credentials:** 
-    - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
-    - Select **Kind**: **UserName with Password** and provide the following details:
+    - Go to **Manage Jenkins → Credentials**, select **Global**, and click **Add Credentials**.
+    - Select **Kind**: **Username with password** and provide the following details:
         - **Username**: `<provide your git-hub username>`. 
         - **Password**: Copy & Paste generated `GitHub Personal Access Token`. 
-        - **ID**: `git-credentials`  
+        - **ID**: `git-token`  
         - **Description**: Git Personal Access Token.
     - Click **Create**.
-- Go to the **Jenkins Dashboard**, click **New Item**, enter the **Item Name** (e.g., `taxi-booking-app`), select **Pipeline** and click **OK**.
-- In the **Configure**, select the **General**, provide a **Description** (e.g., `Jenkins pipeline to deploy taxi booking application on K8s using Helm`), enable **Discard Old Builds**, set **Days to Keep Builds** (e.g., `7`), and **Max # of Builds to Keep** (e.g., `5`).
+- Go to the **Jenkins Dashboard**, click **New Item**, enter the **Item Name** (e.g., `taxi-booking-app`), select **Item Type** as **Pipeline** and click **OK**.
+- In the **Configure**, select the **General**, provide a **Description** (e.g., `Jenkins pipeline to deploy taxi booking application on k8s using helm.`), enable **Discard Old Builds**, set **Days to Keep Builds** (e.g., `7`), and **Max # of Builds to Keep** (e.g., `5`).
 - In the **Pipeline** section, set **Definition** to `Pipeline Script` and inside **Script** select `Hello World` from the dropdown.
 - Click **Apply & Save**.
 
 ### **3. Creating Pipeline Stages**
 1. **Checkout Stage:** 
-    - In the **Pipeline** section, click **Pipeline Syntax**, search for **Git**, enter the **Repository URL** (`<your github repo url from Step 1>`), select **Branch** as `main`, set **Credentials** to `None`, generate the **Pipeline Script**, copy the generated code, and replace it in the **checkout stage**.
+    - In the **Pipeline** section of the Job, click **Pipeline Syntax**, search for **Git**, enter the **Repository URL** (`<your github repo url from Step 1>`), select **Branch** as `main`, set **Credentials** to `None`, generate the **Pipeline Script**, copy the generated code, and replace it in the **checkout stage**.
     - Adding a `parameter` section to choose between **'deploy'** for application deployment and **'uninstall'** for removing application using Helm charts.
         ```groovy
         parameters {
@@ -199,14 +200,18 @@ terraform apply "ec2plan"
                 choice(name: 'ACTION', choices: ['deploy', 'uninstall'], description: 'Choose deploy or uninstall')
             }
 
+            environment {
+                GIT_COMMIT = ""
+            }
+
             stages {
                 stage('Checkout') {
                     steps {
                         echo 'Fetching application code from GitHub'
-                        git branch: 'main', url: '<your github repo url>'
+                        git branch: 'main', credentialsId: 'git-token', url: '<your github repo url>'
                         script {
-                            env.GIT_COMMIT = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
-                            echo "Current Git Commit ID: ${env.GIT_COMMIT}"
+                            GIT_COMMIT = sh(script: "git rev-parse HEAD", returnStdout: true).trim()
+                            echo "Current Git Commit ID: ${GIT_COMMIT}"
                         }
                     }
                 }
@@ -252,8 +257,8 @@ terraform apply "ec2plan"
     - Log in to [SonarCloud](https://www.sonarsource.com/products/sonarcloud/signup/) using your GitHub account.
     - **Create an Organization** 
         - Click the **‘+’** symbol on the top right and select **Create a new organization**.  
-        - Choose **Create one manually**, enter the **Organization Name** and **Organization Key**.  
-        - Select the **Free Tier** and click **Create Organization**.  
+        - Choose **Create one manually**. In the **Enter your organization details** section, provide the **Organization Name** and **Organization Key**.  
+        - In **Choose a plan** section, select the **Free Tier** and click **Create Organization**.  
     - **Create a New Project**  
         - In the newly created organization, click **Analyze New Project**.  
         - Provide a **Display Name** (the **Project Key** will be generated automatically as `org_name_display_name`).  
@@ -264,17 +269,17 @@ terraform apply "ec2plan"
         - Choose **Maven** as the analysis tool.  
         - Copy & Save the generated **SONAR_TOKEN** and its **Value**.
     - **Configure Jenkins with SonarCloud Credentials**  
-        - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
+        - Go to **Manage Jenkins → Credentials**, select **Global**, and click **Add Credentials**.
         - Select **Kind**: **Secret Text** and provide the following details:
             - **Secret**: Copy & Paste generated `Sonar Token value`. 
-            - **ID**: `SONAR_TOKEN`  
-            - **Description**: Sonar Token.
+            - **ID**: `sonar-token`  
+            - **Description**: Sonar Access Token.
         - Click **Create**.
     - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Code Quality Analysis** performs static code quality analysis against **Security, Reliability, Maintainability, Hotspots Reviewed, Coverage and Duplications**.
    - Add the **SONAR_ORG, SONAR_PROJECT_KEY, SONAR_TOKEN** to the **environment** variables in the Pipeline.
         ```groovy
         environment {
-            SONAR_TOKEN=credentials('SONAR_TOKEN')
+            SONAR_TOKEN=credentials('sonar-token')
             SONAR_PROJECT_KEY=<your sonar project key>
             SONAR_ORG=<your sonar organisation name>
         }
@@ -300,14 +305,14 @@ terraform apply "ec2plan"
 
 5. **Quality Gate Check**(optional)
     - **Create a Quality Gate**
-        - In the created **Organization**, navigate to **Quality Gates**, click on **Create**, provide a **Name**, and click **Save**. 
+        - In the created **Organization**, navigate to **Quality Gates**, click on **Create**, provide a **Name** `(e.g., Bugs QG)`, and click **Save**. 
     - **Add Conditions to the Quality Gate**
         - Open the newly created **Quality Gate** and click **Add Conditions**.  
         - Set the following values:  
             - **Where**: Select **Overall Code**.  
             - **Search for Metrics**: Select **Bugs**.  
             - **Threshold Value**: Set to **150**.  
-        - Click **Save Condition**.
+        - Click **Add Condition**.
     - **Set the Quality Gate as Default**  
         - Click on the **three dots** in the top-right corner of the created **Quality Gate**, from the dropdown, select **Set as Default**.
     - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Quality Gate Check** verifies the specified condition and determines whether the quality gate has passed or failed based on the provided metrics.
@@ -319,7 +324,7 @@ terraform apply "ec2plan"
                 expression { params.ACTION == 'deploy' }
             }
             steps {
-                echo "Validating code quality against quality gate metrics"
+                echo "Validating code quality against Bugs Quality gate metrics"
                 script {
                     timeout(time: 5, unit: 'MINUTES') { // Wait for SonarCloud processing
                         sh 'sudo apt-get install -y jq || sudo yum install -y jq'
@@ -359,15 +364,15 @@ terraform apply "ec2plan"
     - **Create a Maven Repository**  
         - Click User Profile in the top-right corner and select **Quick Repository Creation**, now choose **Maven**, click **Next**, provide a **repository prefix** (e.g., `taxi`), and click **Create** to generate repositories.
     - **Generate an Access Token**  
-        - Navigate to **Administrator → User Management → Access Tokens**. Click **Generate Token** and choose **Scoped Token**, and provide a **description** (e.g., `jfrog jenkins token`). Set **Token Scope** to `admin`, enter your **username** (e.g., your name or email ID), and set **Expiration Time** to **30 days**.  
+        - Navigate to **Administrator → User Management → Access Tokens**. Click **Generate Token** and choose **Scoped Token**, and provide a **description** (e.g., `jfrog access token`). Set **Token Scope** to `admin`, enter your **username** (e.g., your name or email ID), and set **Expiration Time** to **30 days**.  
         - Click **Generate**, then **copy and save** the token securely.
     - **Add Jfrog Credentials:** 
-        - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
-        - Select **Kind**: **SSH Username and Password** and provide the following details:
+        - Go to **Manage Jenkins → Credentials**, select **Global**, and click **Add Credentials**.
+        - Select **Kind**: **Username with password** and provide the following details:
             - **Username**: `<username provided while creating jfrog token>`
             - **Password**: `<copy paste generated token>`
-            - **ID**: `jfrog-cred`  
-            - **Description**: Jfrog credentials for Jenkins.
+            - **ID**: `jfrog-token`  
+            - **Description**: Jfrog Access token.
         - Click **Create**.  
     -   Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Publish Artifacts To Jfrog** performs publishing generated **Artifacts to JFrog repository**.
         #### `Publish Artifacts To Jfrog Stage`
@@ -388,7 +393,7 @@ terraform apply "ec2plan"
                     // 1️⃣ Connect to JFrog Artifactory server using Jenkins Artifactory Plugin
                     def server = Artifactory.newServer(
                         url: registry + "/artifactory", 
-                        credentialsId: "jfrog-cred"
+                        credentialsId: "jfrog-token"
                     )
                     
                     // 2️⃣ Define metadata properties for tracking builds
@@ -423,17 +428,26 @@ terraform apply "ec2plan"
 
 7. **Docker Image Creation**
     - Create a `Dockerfile` or use the `existing Dockerfile` from the your application repository.
+    
+        *Note: If you create a Dockerfile push it to your application repository.*
+
         #### `Dockerfile`
         ```Dockerfile
         FROM tomcat:9  
-        MAINTAINER "devops"  
+
+        # Use LABEL to specify metadata
+        LABEL maintainer="devops@yourcompany.com"
+
+        # Copy the WAR file to the Tomcat webapps directory
         COPY ./taxi-booking/target/taxi-booking-1.0.1.war /usr/local/tomcat/webapps  
+
+        # Expose port 8080 for the Tomcat server
         EXPOSE 8080
         ```
         - This Dockerfile uses the **tomcat:9 base image**, copies `taxi-booking-1.0.1.war` to the `/usr/local/tomcat/webapps` directory, and exposes port **8080**.
     - **Create a Docker Repository**   
-        - Navigate to  your **Jfrog dashboard**, click `User Profile` in the top-right corner and select **Quick Repository Creation**, now choose **Docker**, click **Next**, provide a **repository prefix** (e.g., taxi), and click **Create** to generate repositories.
-    - Copy the code below and add it as a **new stage** in the Pipeline, this stage **Docker Image Creation**,builds two Docker images using the `Dockerfile`: one for `JFrog Artifactory` **(internal storage)** and another for `DockerHub` **(public or external use)**.
+        - Navigate to  your **Jfrog dashboard**, click `User Profile` in the top-right corner and select **Quick Repository Creation**, now choose **Docker**, click **Next**, provide a **repository prefix** `(e.g., taxi)`, and click **Create** to generate repositories.
+    - Copy the code below and add it as a **new stage** in the Pipeline, this stage **Docker Image Creation**, builds two Docker images using the `Dockerfile`: one for `JFrog Artifactory` **(internal storage)** and another for `DockerHub` **(public or external use)**.
         #### `Docker Image Creation Stage`
         - This stage uses `docker.build()`, a built-in function provided by the `Docker Pipeline Plugin`, to build a **Docker image** using the `Dockerfile` in the current working directory. This ensures the application is packaged as a **Docker image** and stored in both **JFrog Artifactory and DockerHub**.
         #### `Add Registry`
@@ -476,7 +490,7 @@ terraform apply "ec2plan"
         stage('Publish Docker Image') {
             steps {
                 script{
-                    docker.withRegistry(registry, 'jfrog-cred'){
+                    docker.withRegistry(registry, 'jfrog-token'){
                         app.push()
                     }
                     docker.withRegistry(dockerRegistry, 'docker-cred'){
