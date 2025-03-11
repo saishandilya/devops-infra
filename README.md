@@ -593,17 +593,21 @@ terraform apply "ec2plan"
     - Log into the Jenkins slave machine **(One-time Process)** and authenticate Docker to pull images from the private registry. This is required for Kubernetes secrets.
 
         *Note: Once completed, this step is not required again unless the Docker login credentials change.*
+    - Log in to Docker; the `config.json` file is typically created when you log in to a Docker registry.
+        ```sh
+        docker login
+        ```
     - Run the following command, then copy and save the output for later use:
         ```sh
         cat ~/.docker/config.json | base64 -w0
         ```
-    - Go to **Manage Jenkins → Manage Credentials**, select **Global**, and click **Add Credentials**.
+    - Go to **Manage Jenkins → Credentials**, select **Global**, and click **Add Credentials**.
     - Select **Kind**: **Secret Text** and provide the following details:
         - **Secret**: Copy & Paste generated `Docker credentials (config.json)`. 
         - **ID**: `docker-config-creds`  
         - **Description**: Docker config base 64 encoded credentials.
     - Click **Create**.
-    - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Docker Creds Injection** updates **secret.yaml** in `helm-charts/templates/secret.yaml` folder, replacing .dockerconfigjson value with the generated Docker credentials.
+    - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Docker Creds Injection** updates to **secret.yaml** in `helm-charts/templates/secret.yaml` folder, replacing .dockerconfigjson value with the generated Docker credentials.
 
         *Note: For security reasons, credentials are not stored in GitHub; instead, they are injected dynamically during runtime.*
     - Refer to the [**Helm Charts Guide**](readmes/helm-charts.md) for details on using Helm charts to deploy the application on EKS.
@@ -612,9 +616,9 @@ terraform apply "ec2plan"
         stage('Docker Creds Injection') {
             steps {
                 withCredentials([string(credentialsId: 'docker-config-creds', variable: 'DOCKER_CONFIG_JSON')]) {
-                    sh '''
-                    sed -i "s|dockerconfigjson: \"\"|dockerconfigjson: \\"$DOCKER_CONFIG_JSON\\"|" ./helm-charts/values.yaml
-                    '''
+                sh """
+                    sed -i 's|dockerconfigjson: ""|dockerconfigjson: \"$DOCKER_CONFIG_JSON\"|' ./helm-charts/values.yaml
+                """
                 }
             }
         }
@@ -624,6 +628,7 @@ terraform apply "ec2plan"
 - Copy the below provided code and add it as a **new stage** in the Pipeline, this stage **Deploy Application using Helm** deploys application on EKS cluster using Helm. 
     - If the release already exists, it upgrades the deployment; otherwise, it installs it. 
     - Ensures the namespace exists before deploying the application. 
+        - *Note: If the namespace doesn't exist, add `--create-namespace` at the end. If the namespace exists, remove `--create-namespace`.*
     - After deployment, lists all namespaces and resources in the specified namespace to verify the deployment.
         #### `Deploy Application using Helm Stage`
         ```groovy
@@ -632,11 +637,12 @@ terraform apply "ec2plan"
                 expression { params.ACTION == 'deploy' }
             }
             steps {
-                sh '''
-                    helm upgrade --install <your-release-name(e.g., taxi-booking-release)> ./chart-helm
-                    kubectl get ns
-                    kubectl get all -n <your-namespace-name(e.g., taxi-app)>
-                '''
+                script {
+                    sh 'helm upgrade --install <your-release-name> ./helm-charts --namespace <your-namespace-name> --create-namespace' // remove --create-namespace if namespace exists
+                    sleep 30
+                    sh 'kubectl get ns'
+                    sh 'kubectl get all -n <your-namespace-name>'
+                }
             }
         }
         ```
@@ -676,7 +682,7 @@ terraform apply "ec2plan"
                     helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
                         --namespace monitoring \
                         --create-namespace \
-                        -f ./chart-helm/monitoring-values.yaml
+                        -f ./helm-charts/monitoring-values.yaml
                     '''
                     echo "Monitoring stack deployed successfully!"
                     
@@ -707,32 +713,37 @@ terraform apply "ec2plan"
                 script {
                     echo "Starting Helm uninstall process..."
 
-                    // Uninstall monitoring stack
-                    sh '''
-                    echo "Uninstalling Monitoring stack..."
-                    helm uninstall prometheus --namespace monitoring || true
-                    sleep 30
-                    '''
-
                     // Uninstall custom application
                     sh '''
-                    echo "Uninstalling Application..."
-                    helm uninstall <your-release-name(e.g., taxi-booking-release)> --namespace <your-namespace-name(e.g., taxi-app)> || true
-                    sleep 30
+                        echo "Listing all namespaces"
+                        helm list --all-namespaces
+
+                        echo "Uninstalling Application..."
+                        helm list --namespace <your-namespace-name(e.g., taxi-app)>
+                        helm uninstall <your-release-name(e.g., taxi-booking-release)> --namespace <your-namespace-name(e.g., taxi-app)> || true
+                        sleep 30
+                    '''
+
+                    // Uninstall monitoring stack
+                    sh '''
+                        echo "Uninstalling Monitoring stack..."
+                        helm uninstall prometheus --namespace monitoring || true
+                        sleep 30
                     '''
 
                     // Ensure all resources are deleted before removing namespaces
                     sh '''
-                    echo "Checking if resources are fully removed..."
-                    kubectl get all -n <your-namespace-name(e.g., taxi-app)> || true
-                    kubectl get all -n monitoring || true
+                        echo "Checking if resources are fully removed..."
+                        kubectl get all -n <your-namespace-name(e.g., taxi-app)> || true
+                        kubectl get all -n monitoring || true
                     '''
 
                     // Delete namespaces if empty
                     sh '''
-                    echo "Deleting namespaces..."
-                    kubectl delete ns <your-namespace-name(e.g., taxi-app)> --ignore-not-found
-                    kubectl delete ns monitoring --ignore-not-found
+                        echo "Deleting namespaces..."
+                        kubectl delete ns <your-namespace-name(e.g., taxi-app)> --ignore-not-found
+                        kubectl delete ns monitoring --ignore-not-found
+                        kubectl get ns
                     '''
 
                     echo "Uninstallation and cleanup completed!"
@@ -752,7 +763,7 @@ terraform apply "ec2plan"
     - In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
     - Select **SCM** as **Git** and provide the following details:  
     - **Repository URL**: `<your GitHub repository URL>`  
-    - **Credentials**: `<your Git credentials>`  
+    - **Credentials**: `<your Git Personal access token credentials>`  
     - **Branches to Build**: `main`  
     - Click **Apply & Save**.
 

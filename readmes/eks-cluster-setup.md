@@ -311,7 +311,7 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
 - In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
 - Select **SCM** as **Git** and provide the following details:  
   - **Repository URL**: `<your GitHub repository URL>`  
-  - **Credentials**: `<your Git credentials>`  
+  - **Credentials**: `<your Git Personal Access token credentials>`  
   - **Branches to Build**: `main`  
 - Click **Apply & Save**. 
 
