@@ -2,52 +2,77 @@
 - hosts: jenkins_slave
   become: true 
   tasks: 
-  - name: update ubuntu repo and cache 
+  - name: Update Ubuntu repo and cache 
     apt: 
       update_cache: yes 
       cache_valid_time: 3600
 
-  - name: Install AWS CLI
+  - name: Install unzip and curl
     apt:
-      name: awscli
+      name:
+        - curl
+        - unzip
       state: present
+      update_cache: yes
 
-  - name: install java 
+  - name: Download AWS CLI v2 installer
+    get_url:
+      url: "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+      dest: "/tmp/awscliv2.zip"
+
+  - name: Unzip AWS CLI installer
+    unarchive:
+      src: "/tmp/awscliv2.zip"
+      dest: "/tmp/"
+      remote_src: yes
+
+  - name: Install AWS CLI v2
+    command: "/tmp/aws/install"
+
+  - name: Ensure AWS CLI is accessible globally
+    file:
+      src: /usr/local/bin/aws
+      dest: /usr/bin/aws
+      state: link
+
+  - name: Install Java 17
     apt: 
       name: openjdk-17-jre
       state: present
 
-  - name: download maven packages 
+  - name: Download Maven
     get_url:
       url: https://dlcdn.apache.org/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.tar.gz
-      dest: /opt
+      dest: /opt/apache-maven-3.9.6-bin.tar.gz
 
-  - name: extract maven packages 
+  - name: Extract Maven
     unarchive:
       src: /opt/apache-maven-3.9.6-bin.tar.gz
       dest: /opt 
       remote_src: yes
-  
-  - name: install docker
+
+  - name: Create symlink for Maven
+    file:
+      src: /opt/apache-maven-3.9.6/bin/mvn
+      dest: /usr/bin/mvn
+      state: link
+
+  - name: Install Docker
     apt:
       name: docker.io
       state: present
 
-  - name: start docker services
+  - name: Start and enable Docker service
     service:
       name: docker
       state: started
+      enabled: yes
 
-  - name: give 777 permissions on /var/run/docker.sock
+  - name: Give 777 permissions on /var/run/docker.sock
     file:
       path: /var/run/docker.sock
       state: file
-      mode: 0777
-
-  - name: start docker on boot time
-    service:
-      name: docker
-      enabled: yes
+      mode: '0777'
 
   - name: Download and install the latest kubectl
     shell: |
