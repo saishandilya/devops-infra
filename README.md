@@ -41,7 +41,11 @@ Before starting this project, ensure you have the following installed and config
 - Create a new or use an existing **GitHub account**.
 
 ## Architectural Diagram
-- *Working on the Architectural Diagram will be added soon..*
+Here is the architectural diagram for the project:
+
+![Architecture Diagram](images/devops-infra.png)
+
+This diagram provides a high-level view of the system components and their interactions.
 
 ## Infrastructure Setup
 
