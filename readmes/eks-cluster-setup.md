@@ -300,20 +300,21 @@ The Jenkins slave machine requires an IAM role with permissions to run the EKS d
 ### **4. Jenkinsfile and Webhook Configuration** (Need to add a webhook)
 
 1. **Running the Pipeline Directly in Jenkins**  
-- After adding all the above stages to the pipeline, **Validate** the pipeline script and check for any **syntax issues**.  
-- Click **Save & Apply**.  
-- Run the pipeline by clicking **Build with Parameters**. Choose **apply** to create resources or **destroy** to delete them.  
+    - After adding all the above stages to the pipeline, **Validate** the pipeline script and check for any **syntax issues**.  
+    - Click **Save & Apply**.  
+    - Run the pipeline by clicking **Build with Parameters**. Choose **apply** to create resources or **destroy** to delete them.  
 
 2. **Using a Jenkinsfile from GitHub**  
-- Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned infra repository by replacing it with your custom values. 
-    #### `custom values`
-    - BUCKET_NAME = `<your terraform backend s3 bucket>` # (e.g., s3-backend-bucket)
-- In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
-- Select **SCM** as **Git** and provide the following details:  
-  - **Repository URL**: `<your GitHub repository URL>`  
-  - **Credentials**: `<your Git Personal Access token credentials>`  
-  - **Branches to Build**: `main`  
-- Click **Apply & Save**. 
+    - Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned infra repository by replacing it with your custom values. 
+    #### `sample custom values`
+        Environment section:
+            BUCKET_NAME = "s3-backend-bucket"
+    - In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
+        - Select **SCM** as **Git** and provide the following details:  
+        - **Repository URL**: `<your GitHub repository URL>`  
+        - **Credentials**: `<your Git Personal Access token credentials>`  
+        - **Branches to Build**: `main`  
+    - Click **Apply & Save**. 
 
 3. **Webhook Configuration**
     - Go to your GitHub **application repository**, click on `Settings`, scroll down to `Code and Automation`, select `Webhooks`, click `Add webhook`, and enter the **required password**.

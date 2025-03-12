@@ -529,6 +529,12 @@ terraform apply "ec2plan"
             }
         }
         ```
+        #### `Validation`
+        - Replace the `slave-public-ip-address` value with your slave node IP address in the URL below, then open it in Chrome. This should ideally launch the application.
+            ```sh
+            http://<your slave-public-ip-address>:8000/taxi-booking-1.0.1/
+            ```
+
 10. **Cluster Validation**
     <!-- **Prerequisite:**  -->
     - This stage requires an existing **EKS cluster**. 
@@ -683,15 +689,15 @@ terraform apply "ec2plan"
                     
                     // Helm install or upgrade with values.yaml
                     sh '''
-                    helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-                        --namespace monitoring \
-                        --create-namespace \
-                        -f ./helm-charts/monitoring-values.yaml
+                        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+                            --namespace monitoring \
+                            --create-namespace \
+                            -f ./helm-charts/monitoring-values.yaml
+                        sleep 30
                     '''
                     echo "Monitoring stack deployed successfully!"
                     
                     sh '''
-                        kubectl get ns
                         kubectl get all -n monitoring
                     '''
                 }
@@ -709,42 +715,41 @@ terraform apply "ec2plan"
 
         #### `Uninstall Monitoring Stack & Application using Helm Stage`
         ```groovy
-        stage('Uninstall monitoring using helm') {
+        stage('Uninstall Monitoring Stack & Application using Helm') {
             when {
                 expression { params.ACTION == 'uninstall' }
             }
             steps {
                 script {
-                    echo "Starting Helm uninstall process..."
+                    echo "Initialising Helm uninstall Monitoring Stack and Application"
 
                     // Uninstall custom application
                     sh '''
-                        echo "Listing all namespaces"
+                        echo "List releases across all namespaces"
                         helm list --all-namespaces
 
-                        echo "Uninstalling Application..."
-                        helm list --namespace <your-namespace-name(e.g., taxi-app)>
+                        echo "Uninstalling Application"
                         helm uninstall <your-release-name(e.g., taxi-booking-release)> --namespace <your-namespace-name(e.g., taxi-app)> || true
                         sleep 30
                     '''
 
                     // Uninstall monitoring stack
                     sh '''
-                        echo "Uninstalling Monitoring stack..."
+                        echo "Uninstalling Monitoring stack"
                         helm uninstall prometheus --namespace monitoring || true
                         sleep 30
                     '''
 
                     // Ensure all resources are deleted before removing namespaces
                     sh '''
-                        echo "Checking if resources are fully removed..."
+                        echo "Checking if resources are fully removed"
                         kubectl get all -n <your-namespace-name(e.g., taxi-app)> || true
                         kubectl get all -n monitoring || true
                     '''
 
                     // Delete namespaces if empty
                     sh '''
-                        echo "Deleting namespaces..."
+                        echo "Deleting namespaces"
                         kubectl delete ns <your-namespace-name(e.g., taxi-app)> --ignore-not-found
                         kubectl delete ns monitoring --ignore-not-found
                         kubectl get ns
@@ -763,12 +768,33 @@ terraform apply "ec2plan"
     - Run the pipeline by clicking **Build with Parameters**. Choose **deploy** to deploy the application or **uninstall** to remove the application.
 
 2. **Using a Jenkinsfile from GitHub**
-    - Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned application repository by replacing it with your custom values.  
+    - Copy the pipeline stages into a **Jenkinsfile** and push it to your `GitHub repository`. Alternatively, update the existing `Jenkinsfile` in the cloned application repository by replacing it with your custom values.
+    #### `sample custom values`
+        def:
+            registry                    = "https://taxibookingapp12456722.jfrog.io/"
+            imageNameJfrogArtifact      = "taxibooking-docker-local/taxi-booking"
+            imageNameDocker             = "saishandilya/taxi-booking"
+        Environment:
+            SONAR_PROJECT_KEY           = "taxiapp_taxibooking"
+            SONAR_ORG                   = "taxiapp"
+            AWS_REGION                  = "us-east-1"
+            CLUSTER_NAME                = "eks-devops"
+        Stages: 
+            Publish Artifacts To Jfrog:
+                "pattern": "${env.WORKSPACE}/taxi-booking-app/target/(*)"
+                "target": "taxi-libs-release-local/{1}"
+            Deploy Application using Helm:
+                <your-release-name>     = taxi-booking-release
+                <your-namespace-name>   = taxi-app
+            Uninstall Monitoring Stack & Application using Helm:
+                <your-release-name>     = taxi-booking-release
+                <your-namespace-name>   = taxi-app
+            
     - In Jenkins, navigate to the **Pipeline** section and set **Definition** to `Pipeline Script from SCM`.  
-    - Select **SCM** as **Git** and provide the following details:  
-    - **Repository URL**: `<your GitHub repository URL>`  
-    - **Credentials**: `<your Git Personal access token credentials>`  
-    - **Branches to Build**: `main`  
+        - Select **SCM** as **Git** and provide the following details:  
+        - **Repository URL**: `<your GitHub repository URL>`  
+        - **Credentials**: `<your Git Personal Access token credentials>`  
+        - **Branches to Build**: `main`  
     - Click **Apply & Save**.
 
 3. **Webhook Configuration**
@@ -794,6 +820,9 @@ terraform apply "ec2plan"
         ```sh
         http://<LoadBalancer-DNS>:8001/taxi-booking-1.0.1/
         ```
+        Your page should look something like the one below.
+
+        ![Application Successfully Deployed](images/app-status.png)
 2. **Access Prometheus Dashboard**
     - Run the command on the Jenkins Slave machine:
         ```sh
@@ -806,6 +835,10 @@ terraform apply "ec2plan"
         ```
         *Note: If a security warning appears, click "Continue to site"*
     - Navigate to **Status** > **Targets** to view service details.
+
+        Your page should look something like the one below.
+
+        ![Prometheus Dashboard](images/prom-dashboard.png)
 3. **Access Grafana Dashboard**
     - From the response of the above command (`kubectl get all -n monitoring`), find `service/prometheus-grafana`.
     - Fetch the **LoadBalancer DNS name** and access **Grafana** (Grafana runs on port 80 by default).
@@ -817,6 +850,10 @@ terraform apply "ec2plan"
         - **Username:** `admin`
         - **Password:** `prom-operator`
 
+        Your pages should look something like the once below.
+
+        ![Grafana Dashboard](images/grafana-dashboard.png)
+
 ### **5. Cleanup Process**
 1. **Uninstall Application and Monitoring Stack**
     - In the **application pipeline**, click `Build with Parameters` and choose **uninstall**.
@@ -827,7 +864,7 @@ terraform apply "ec2plan"
     - The process may take 15–20 minutes to complete.
 3. **Infrastucture Cleanup**
     - On the **local machine**, navigate to the `infrastructure` folder.
-    - Run the command: `terraform destroy --auto-approve`.
+    - Run the command: `terraform destroy -target="module.ec2" -var-file="ec2.tfvars" -auto-approve`.
     - This removes the **three EC2 instances** used for the `Ansible` and `Jenkins Master-Slave` configuration.
 
 ## **Conclusion**  

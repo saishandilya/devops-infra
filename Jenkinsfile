@@ -5,7 +5,7 @@ pipeline {
     tools { terraform 'terraform' }
 
     environment {
-        BUCKET_NAME = "infra-backend-statefile"
+        BUCKET_NAME = "<your s3 bucket name>" // e.g., s3-backend-bucket
         PLAN_NAME   = ""
     }
 
@@ -17,7 +17,7 @@ pipeline {
         stage('Terraform Init') {
             steps {
                 echo 'Terraform Initialization...!!!'
-                // Ensure Terraform is properly initialized
+                // Terraform initialize
                 sh 'terraform init -backend-config="key=eks/terraform.tfstate"'
             }
         }
